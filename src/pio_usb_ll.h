@@ -13,6 +13,7 @@
 
 #include "usb_tx.pio.h"
 #include "usb_rx.pio.h"
+#include "usb_crc.h" // for get_time_us_32() used in timeout guards
 
 enum {
   PIO_USB_INTS_CONNECT_POS = 0,
@@ -136,6 +137,7 @@ void pio_usb_bus_usb_transfer(pio_port_t *pp, uint8_t *data,
                               uint16_t len);
 
 uint8_t pio_usb_bus_wait_handshake(pio_port_t *pp);
+void pio_usb_bus_send_handshake(pio_port_t *pp, uint8_t pid);
 void pio_usb_bus_send_token(pio_port_t *pp, uint8_t token, uint8_t addr,
                             uint8_t ep_num);
 
@@ -167,8 +169,11 @@ pio_usb_bus_get_line_state(root_port_t *root) {
 
 static __always_inline void pio_usb_bus_start_receive(const pio_port_t *pp) {
   pp->pio_usb_rx->irq = IRQ_RX_ALL_MASK;
+  uint32_t start = get_time_us_32();
   while ((pp->pio_usb_rx->irq & IRQ_RX_ALL_MASK) != 0) {
-    continue;
+    if (get_time_us_32() - start > 10) {
+      return; // timeout: RX IRQ clear stuck
+    }
   }
 }
 
